@@ -6,8 +6,9 @@ from PIL import Image
 from tqdm import tqdm
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms, models
+from sklearn.model_selection import train_test_split
 
-# Transformations for input images
+# Transformations for input images - Standardizzo le dimensioni e proprietà
 def get_transforms():
     return transforms.Compose([
         transforms.Resize(256),
@@ -25,7 +26,7 @@ def load_gtsrb_dataframe(csv_file):
 
 # Load a single sample (image + label)
 def get_sample(df, idx, root_dir, transform=None, use_roi=True):
-    row = df.iloc[idx]
+    row = df.iloc[idx] #prendo riga del datafrabe
 
 
     img_path = os.path.join(root_dir, row["Path"])
@@ -34,7 +35,7 @@ def get_sample(df, idx, root_dir, transform=None, use_roi=True):
 
     label = int(row["ClassId"])
 
-    if use_roi:
+    if use_roi: #ritagli la ROI basato sull'annotazione  del singolo esempio
         x1, y1, x2, y2 = int(row["Roi.X1"]), int(row["Roi.Y1"]), \
                          int(row["Roi.X2"]), int(row["Roi.Y2"])
         image = image.crop((x1, y1, x2, y2))
@@ -57,7 +58,7 @@ class FunctionalDataset(Dataset):
 
     def __getitem__(self, idx):
         return get_sample(
-            self.df, idx,
+            self.df, idx, #numero dell'immagine
             root_dir=self.root_dir,
             transform=self.transform,
             use_roi=self.use_roi
@@ -67,8 +68,9 @@ class FunctionalDataset(Dataset):
 # Prepare a ResNet18 feature extractor
 def get_feature_extractor(device):
     print("Caricamento modello ResNet18 pre-addestrato...")
-    resnet = models.resnet18(weights=models.ResNet18_Weights.DEFAULT) #solo feature, no class finali
-    extractor = torch.nn.Sequential(*list(resnet.children())[:-1])
+    resnet = models.resnet18(weights=models.ResNet18_Weights.DEFAULT) 
+    extractor = torch.nn.Sequential(*list(resnet.children())[:-1]) #tutti componenti tranne fc ovvero classificatore finale quindi
+    ##solo feature, no class finali
     return extractor.to(device).eval()
 
 # Extract embeddings from all images in the DataLoader
@@ -80,7 +82,7 @@ def extract_embeddings(loader, feature_extractor, device):
         #yb: Contiene le relative etichette
         with torch.no_grad():
             xb = xb.to(device)
-            feats = feature_extractor(xb)   # Output: [Batch, 512, 1, 1]
+            feats = feature_extractor(xb)   # Output: [Batch, 512, 1, 1] APPENA DOPO FEATURE EXTRACTOR
             feats = torch.flatten(feats, 1) # Output: [Batch, 512]
 
         X_list.append(feats.cpu())
@@ -115,13 +117,13 @@ def main():
 
     #Configuration to process train and test
     datasets_config = [
-        ("Train", "data/Train.csv", ("Train/", "train/")), 
-        ("Test", "data/Test.csv", ("Test/", "test/"))
+        ("Train", "data/Train.csv"), 
+        ("Test", "data/Test.csv")
     ]
 
     results = {}
 
-    for name, csv_path, (old_path, new_path) in datasets_config:
+    for name, csv_path in datasets_config:
         print(f"\n--- Feature Extraction for {name} Set ---")
         
         if not os.path.exists(csv_path):
@@ -129,9 +131,6 @@ def main():
             return
 
         df = load_gtsrb_dataframe(csv_path)
-        
-        # Correzione dinamica dei percorsi (gestisce maiuscole/minuscole tipiche di Kaggle)
-        df['Path'] = df['Path'].str.replace(old_path, new_path, regex=False)
         
         # Dataloader creation
         print("Creating DataLoader and extracting features...")
@@ -158,14 +157,29 @@ def main():
     #Extract all classes name
     classes = np.unique(results['y_train']).astype(str)
 
+    X_tr_full = results['X_train']
+    y_tr_full = results['y_train']
+
+
+    X_train, X_val, y_train, y_val = train_test_split(
+        X_tr_full, 
+        y_tr_full, 
+        test_size=0.20, 
+        random_state=42, 
+        stratify=y_tr_full
+    )
+
     #Saving on DISC
     os.makedirs(OUT_DIR, exist_ok=True)
 
 
+
     np.savez_compressed(
         FEATURE_FILE, 
-        X_tr=results['X_train'], 
-        y_tr=results['y_train'], 
+        X_tr=X_train, 
+        y_tr=y_train, 
+        X_val=X_val,
+        y_val=y_val,
         X_te=results['X_test'], 
         y_te=results['y_test'], 
         classes=classes
