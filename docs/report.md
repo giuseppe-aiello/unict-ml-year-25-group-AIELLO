@@ -727,9 +727,32 @@ Ciò sarebbe decisivo nel separare "overfitting da class-weighting" da "rumore d
 
 *Le curve di training (Softmax, OvR, MLP) e tutti i grafici diagnostici per-modello sono ora integrati direttamente nella sezione Esperimenti, vicino alla discussione a cui si riferiscono, per non separare il grafico dal testo che lo spiega.*
 
+### Tabella completa delle 16 configurazioni (Softmax/OvR)
+
+| lr | mom | wd | bs | epoche (SM) | val_loss SM | val_acc SM | epoche (OvR) | val_loss OvR | val_acc OvR |
+|---|---|---|---|---|---|---|---|---|---|
+| 0.001 | 0.99 | 0.0 | 64 | 50 | **0.152** | 95.27% | 44 | 0.199 | 98.43% |
+| 0.01 | 0.9 | 0.0 | 64 | 47 | 0.157 | 95.03% | 42 | 0.164 | 98.78% |
+| 0.01 | 0.9 | 0.0001 | 64 | 50 | 0.157 | 95.29% | 50 | 0.171 | 98.51% |
+| 0.001 | 0.99 | 0.0001 | 64 | 50 | 0.159 | 95.14% | 50 | 0.207 | 98.02% |
+| 0.01 | 0.99 | 0.0001 | 128 | 35 | 0.169 | 94.84% | 39 | 1.182 | 98.22% |
+| 0.001 | 0.99 | 0.0 | 128 | 50 | 0.175 | 94.84% | 50 | 0.106 | 98.55% |
+| 0.01 | 0.9 | 0.0 | 128 | 50 | 0.176 | 94.86% | 50 | 0.145 | 98.47% |
+| 0.01 | 0.9 | 0.0001 | 128 | 50 | 0.181 | 94.80% | 50 | 0.107 | 98.61% |
+| 0.001 | 0.99 | 0.0001 | 128 | 50 | 0.182 | 94.55% | 50 | 0.107 | 98.58% |
+| 0.01 | 0.99 | 0.0 | 128 | 19 | 0.206 | 94.30% | 26 | 1.449 | 96.56% |
+| 0.001 | 0.9 | 0.0 | 64 | 50 | 0.286 | 92.58% | 50 | **0.075** | 98.67% |
+| 0.001 | 0.9 | 0.0001 | 64 | 50 | 0.287 | 92.58% | 50 | 0.075 | 98.74% |
+| 0.01 | 0.99 | 0.0 | 64 | 22 | 0.321 | 93.83% | 25 | 1.961 | 97.88% |
+| 0.001 | 0.9 | 0.0 | 128 | 50 | 0.371 | 91.04% | 50 | 0.080 | 98.43% |
+| 0.001 | 0.9 | 0.0001 | 128 | 50 | 0.373 | 90.88% | 50 | 0.082 | 98.38% |
+| 0.01 | 0.99 | 0.0001 | 64 | 8 | 0.463 | 90.56% | 50 | 2.363 | 97.63% |
+
+*(ordinata per val_loss Softmax migliore; in grassetto le due configurazioni vincenti, rispettivamente per Softmax e per OvR — vedi Esperimenti)*
+
 ## Riferimenti
 
 - Stallkamp, J., Schlipsing, M., Salmen, J., & Igel, C. (2012). *Man vs. computer: Benchmarking machine learning algorithms for traffic sign recognition.* Neural Networks, 32, 323–332. https://doi.org/10.1016/j.neunet.2012.02.016
 - Elkan, C. (2001). *The Foundations of Cost-Sensitive Learning.* Proceedings of the 17th International Joint Conference on Artificial Intelligence (IJCAI), 973–978. https://cseweb.ucsd.edu/~elkan/rescale.pdf
 - Galar, M., Fernández, A., Barrenechea, E., Bustince, H., & Herrera, F. (2012). *A Review on Ensembles for the Class Imbalance Problem: Bagging-, Boosting-, and Hybrid-Based Approaches.* IEEE Transactions on Systems, Man, and Cybernetics, Part C, 42(4), 463–484. https://doi.org/10.1109/TSMCC.2011.2161285
-- Valverde-Albacete, F. J., & Peláez-Moreno, C. (2014). *100% Classification Accuracy Considered Harmfn Transfer Factor Explains the Accuracy Paradox.* PLOS ONE, 9(1), e84217.https://doi.org/10.1371/journal.pone.0084217
+- Valverde-Albacete, F. J., & Peláez-Moreno, C. (2014). *100% Classification Accuracy Considered Harmful: The Normalized Information Transfer Factor Explains the Accuracy Paradox.* PLOS ONE, 9(1), e84217. https://doi.org/10.1371/journal.pone.0084217
