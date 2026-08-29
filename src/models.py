@@ -10,6 +10,20 @@ class SoftmaxClassifier(nn.Module):
         logits = self.linear(x)
         return logits
 
+class MLPClassifier(nn.Module):
+    def __init__(self, in_features, num_classes, hidden_size=128, dropout=0.0):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(in_features, hidden_size),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(hidden_size, num_classes)
+        )
+
+    def forward(self, x):
+        return self.net(x)
+
+
 #Logistic Regression - All vs One
 class LogisticRegression(nn.Module):
     def __init__(self, in_features):

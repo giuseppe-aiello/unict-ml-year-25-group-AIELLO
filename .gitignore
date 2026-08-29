@@ -3,3 +3,11 @@ __pycache__/
 *.pkl
 .DS_Store
 .ipynb_checkpoints
+
+# Tutto il contenuto di results/ (pesi, feature, JSON dei risultati) è
+# disponibile già pronto, nessun training richiesto, come archivio unico
+# nella GitHub Release del repo. Basta scaricarlo ed estrarlo: nessun file
+# sparso da mischiare col repository.
+results/*
+!results/.gitkeep
+pesi_modelli.zip
