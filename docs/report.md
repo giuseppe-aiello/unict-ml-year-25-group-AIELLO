@@ -29,21 +29,18 @@ Il dataset è il **GTSRB (German Traffic Sign Recognition Benchmark)**, un datas
 
 ### Come ottenere il dataset
 
-Il dataset GTSRB non è incluso nel repository. È scaricabile dalla fonte ufficiale:
+Il dataset GTSRB non è incluso nel repository (per un dataset dello stato dell'arte è sufficiente indicare il link, senza inviare i dati). La versione usata in questo progetto — con `Train.csv`/`Test.csv`/`Meta.csv` unificati e immagini in formato PNG — è quella distribuita su Kaggle:
 
-- **Sito ufficiale del benchmark** (Institut für Neuroinformatik, Ruhr-Universität Bochum): https://benchmark.ini.rub.de/gtsrb_news.html
+- **Kaggle**: https://www.kaggle.com/datasets/meowmeowmeowmeowmeow/gtsrb-german-traffic-sign (richiede un account gratuito)
+- **Benchmark ufficiale originale** (Institut für Neuroinformatik, Ruhr-Universität Bochum): https://benchmark.ini.rub.de/gtsrb_news.html — nota: l'archivio ufficiale distribuisce le immagini in formato `.ppm` con un file di ground truth separato per ogni classe, non nell'unico `Train.csv`/`Test.csv` usato qui; per riprodurre esattamente la struttura sotto è quindi consigliato il mirror Kaggle.
 
-Una volta scaricati i dati, organizzali creando una cartella principale chiamata data. Al suo interno, inserisci direttamente i seguenti elementi sotto forma di un semplice elenco:
-- Il file Train.csv
-
-- Il file Test.csv
-- Il file Meta.csv
-
-- La cartella Test
-
-- La cartella Meta
-
-- La cartella Train (questa specifica cartella deve contenere al suo interno 43 sottocartelle, una per ogni classe).
+Una volta scaricati i dati, organizzarli in una cartella `data/` nella root del progetto con questa struttura:
+- `Train.csv`
+- `Test.csv`
+- `Meta.csv`
+- cartella `Train/` (con 43 sottocartelle al suo interno, una per classe)
+- cartella `Test/`
+- cartella `Meta/`
 
 ### Etichettatura
 
