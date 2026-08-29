@@ -578,9 +578,8 @@ La demo è un'interfaccia grafica realizzata in **Tkinter** (`src/demo.py`) che 
 
 Per usarli:
 1. Scaricare `pesi_modelli.zip` dal link sopra.
-2. Estrarlo nella cartella `results/` del repository (l'archivio contiene già le sottocartelle `models/` e `models_classical/` con la struttura corretta — l'estrazione va fatta *dentro* `results/`, non nella root del progetto).
-3. A questo punto sia la demo (`python src/demo.py`) sia gli script `evaluate_*.py` funzionano immediatamente, senza rieseguire alcun training.
-
+2. Estrarlo nella cartella `results/` del repository (l'archivio va estratto *dentro* `results/`, non nella root del progetto). Al termine, `results/` dovrebbe contenere le sottocartelle `features/` (embedding ResNet18 precalcolati), `models/` (pesi Softmax/OvR/MLP), `models_classical/` (pesi Decision Tree/Random Forest/SVM/AdaBoost) e `models_mlp/` (riepilogo della grid search MLP).
+3. A questo punto sia la demo (`python src/demo.py`) sia gli script `evaluate_*.py`/`plot_*.py` funzionano immediatamente, senza rieseguire alcun training.
 
 ### Come è organizzato il codice
 
@@ -617,8 +616,8 @@ Video dimostrativo dell'utilizzo della demo (selezione modello, caricamento imma
 
 Per usarli:
 1. Scaricare `pesi_modelli.zip` dal link sopra.
-2. Estrarlo nella cartella `results/` del repository (l'archivio contiene già le sottocartelle `models/` e `models_classical/` con la struttura corretta — l'estrazione va fatta *dentro* `results/`, non nella root del progetto).
-3. A questo punto sia la demo (`python src/demo.py`) sia gli script `evaluate_*.py` funzionano immediatamente, senza rieseguire alcun training.
+2. Estrarlo nella cartella `results/` del repository (l'archivio va estratto *dentro* `results/`, non nella root del progetto). Al termine, `results/` dovrebbe contenere le sottocartelle `features/` (embedding ResNet18 precalcolati), `models/` (pesi Softmax/OvR/MLP), `models_classical/` (pesi Decision Tree/Random Forest/SVM/AdaBoost) e `models_mlp/` (riepilogo della grid search MLP).
+3. A questo punto sia la demo (`python src/demo.py`) sia gli script `evaluate_*.py`/`plot_*.py` funzionano immediatamente, senza rieseguire alcun training.
 
 ### Struttura del repository
 
