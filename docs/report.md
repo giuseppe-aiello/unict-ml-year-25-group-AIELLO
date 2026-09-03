@@ -125,7 +125,7 @@ Per confrontare in modo omogeneo otto modelli molto diversi tra loro (lineari, e
 
 **Curve di train vs validation nel tempo** (per epoca) — per i tre modelli allenati con SGD (Softmax, OvR, MLP).
 
-**Gap Val→Test** (val_acc − test_acc) — misura derivata, non una metrica standard, calcolata per tutti e otto i modelli. E' diventata subito dopo analisi principale del progetto: quantifica quanto la performance misurata in validation (usata per scegliere il modello) si conferma o meno sul test set mai toccato prima.
+**Gap Val→Test** (val_acc − test_acc) — misura derivata, non una metrica standard, calcolata per tutti e otto i modelli. Quantifica quanto la performance misurata in validation (usata per scegliere il modello) si conferma o meno sul test set mai toccato prima.
 
 ## Esperimenti
 
@@ -154,7 +154,7 @@ Per ciascuna delle 16 configurazioni sono state registrate le curve di train/val
 
 1. **Softmax e OvR non condividono lo stesso ottimo di iperparametri.** La configurazione migliore per il Softmax (`mom=0.99`, val_loss=0.152) non è la migliore per l'OvR: guardando solo la val_loss dell'OvR, la configurazione migliore è invece `mom=0.9` (val_loss=0.075), che per il Softmax è nettamente peggiore (val_loss=0.286). Questo suggerisce che i due approcci hanno superfici di loss diverse e reagiscono diversamente agli stessi iperparametri (Vedi sotto).
 
-2. **Instabilità con momentum alto + learning rate alto.** Le combinazioni con `lr=0.01, mom=0.99` mostrano un comportamento anomalo per l'OvR: la val_loss esplode fino a 1.18–2.36 (contro un range normale di 0.07–0.21 nelle altre configurazioni), e il training si ferma molto prima per early stopping (es. 8 epoche invece di 50). Il Softmax nelle stesse configurazioni resta relativamente stabile *(Ricorda: OvR parla per media di 43 classi)*, sebbene con performance peggiori. Questo indica che la loss binaria pesata (`BCEWithLogitsLoss` con `pos_weight=40`) è più sensibile a combinazioni aggressive di learning rate e momentum rispetto alla cross-entropy multiclasse.
+2. **Instabilità con momentum alto + learning rate alto.** Le combinazioni con `lr=0.01, mom=0.99` producono una val_loss OvR molto più alta del normale (1.18–2.36, contro 0.07–0.21 nelle altre configurazioni). La colonna "epoche (OvR)" non è però un indicatore di stabilità: ogni classificatore binario ha un early stopping indipendente (`patience=5`), e nella media aggregata (`aggregate_ovr_histories` in `run_experiment.py`) l'ultimo valore di un classificatore già fermo viene ripetuto per le epoche restanti — il numero riportato riflette quindi solo la durata del classificatore più lento tra i 43. Nel caso più estremo (`lr=0.01, mom=0.99, wd=0.0001, bs=64`), il Softmax si ferma dopo sole 8 epoche mentre la colonna OvR mostra 50; ma la curva media OvR si appiattisce già dall'epoca 21 su un valore costante (2.544), segno che quasi tutti i 43 classificatori hanno smesso di migliorare molto prima. La loss binaria pesata (`BCEWithLogitsLoss`, `pos_weight=40`) è quindi più sensibile a combinazioni aggressive di learning rate e momentum rispetto alla cross-entropy multiclasse: nel Softmax l'instabilità è visibile e ferma subito il training, nell'OvR resta invece mascherata dalla media su 43 modelli indipendenti *(ricorda: OvR parla per media di 43 classi)*.
 
 Alcuni Esempi: 
 
@@ -163,18 +163,20 @@ Alcuni Esempi:
 | 0.01 | 0.99 | 0.0001 | 64 | 50 | 2.363 | 97.63% |
 | 0.001 | 0.99 | 0.0001 | 64 | 50 | 0.159 | 95.14% |
 
+*(Il valore `2.363` in tabella è il minimo storico della curva media, epoca 11 — coerente con la convenzione usata in tutte le tabelle di confronto del report. Il grafico sottostante mostra l'intera traiettoria: dopo il minimo la curva peggiora e si stabilizza su un valore più alto, 2.544, dall'epoca 21 in poi.)*
 
 <img src="../media/ovr_instabilita.png" alt="OvR grafico loss" width="650">
 
 
-Spiegazione:
-- Learning rate alto (0.01): moltiplica un gradiente già amplificato 40x → il passo di aggiornamento dei pesi è enorme.
-- Momentum alto (0.99): la "velocità" accumulata nei passi precedenti decade pochissimo (99% viene mantenuto ad ogni step) — se i primi passi sono già sovradimensionati per via del pos_weight, il momentum li fa accumulare invece di smorzarli.
-Il risultato è un ciclo che si auto-alimenta: un passo troppo grande spinge il modello in una zona dove la sigmoide predice con grande sicurezza (e in modo sbagliato) per qualche esempio positivo → la BCE loss per quell'esempio esplode (matematicamente, -log(sigmoid) non è limitata, cresce senza freno quando la predizione è sicura e sbagliata) → moltiplicata per 40 diventa ancora più grande → il gradiente successivo è ancora più grande → il momentum lo accumula ancora di più. È una spirale.
+**Meccanismo:**
+- Learning rate alto (0.01): moltiplica un gradiente già amplificato 40x dal `pos_weight`, producendo un passo di aggiornamento enorme.
+- Momentum alto (0.99): la velocità accumulata nei passi precedenti decade molto lentamente (99% mantenuto ad ogni step); se i primi passi sono già sovradimensionati dal `pos_weight`, il momentum li accumula invece di smorzarli.
 
-La media della val_loss OvR tocca un minimo di 2.363 all'epoca 11 e poi si stabilizza su un valore peggiore, 2.544. Per capire se questo degrado fosse distribuito in modo relativamente uniforme sui 43 classificatori oppure concentrato in pochi casi estremi, ho analizzato la loss per singola classe, sulla configurazione instabile `lr=0.01`, `momentum=0.99`, `weight_decay=0.0001`, `batch_size=64`.
+Il risultato è un ciclo che si autoalimenta: un passo eccessivo spinge il modello a predire con grande confidenza, ma in modo sbagliato, su qualche esempio positivo → la BCE loss di quell'esempio, non limitata superiormente, esplode → moltiplicata per 40 diventa ancora più grande → il gradiente successivo cresce a sua volta → il momentum lo accumula ulteriormente. È una spirale.
 
-Analizzando la loss sul validation set si ricavano i seguenti dati:
+Per indagare l'origine di questa instabilità è stata analizzata la loss di ciascuno dei 43 classificatori **al proprio checkpoint migliore** — l'unico effettivamente salvato su disco (`logistic_class_i.pth`), poiché in `training.py` il salvataggio avviene solo quando la loss migliora, mai all'ultima epoca — sulla configurazione instabile `lr=0.01, mom=0.99, wd=0.0001, bs=64`. Questa analisi è indipendente dalla curva aggregata mostrata sopra (che riflette la traiettoria grezza epoca-per-epoca, non i checkpoint migliori): l'obiettivo è isolare la capacità reale di ciascun classificatore, non scomporre un valore specifico di quella curva. La media dei 43 valori riportati sotto (≈1.10) non è quindi direttamente confrontabile con i numeri del grafico.
+
+Statistiche sulla loss di validation dei 43 classificatori:
 
 | Statistica | Valore |
 | --- | --- |
@@ -184,15 +186,14 @@ Analizzando la loss sul validation set si ricavano i seguenti dati:
 | Max | 10.04 |
 | Deviazione standard | 1.96 |
 
-Il gap enorme tra media (1.10) e mediana (0.32) è la firma classica di una distribuzione dominata da outlier: la maggioranza dei classificatori sta bene, pochi trascinano la media.
+Il gap tra media (1.10) e mediana (0.32) è la firma tipica di una distribuzione dominata da outlier: la maggioranza dei classificatori si comporta bene, pochi trascinano la media.
 
-Nel dettaglio:
-- 21 classi su 43 hanno loss < 0.3 (range sano) — quasi la metà.
-- 9 classi su 43 hanno loss > 1.0 (range malato) — e tra queste, le peggiori sono davvero estreme: classe 1 (loss=10.04!), classe 2 (5.90), classe 7 (4.20), classe 5 (4.20), classe 8 (3.46), classe 4 (3.25), classe 25 (2.98), classe 3 (2.64).
+- 21 classi su 43 (quasi la metà) hanno loss < 0.3 (range sano).
+- 9 classi su 43 hanno loss > 1.0, con valori estremi: classe 1 (10.04), classe 2 (5.90), classe 7 (4.20), classe 5 (4.20), classe 8 (3.46), classe 4 (3.25), classe 25 (2.98), classe 3 (2.64).
 
-In particolare, la classe 2 — quella col valore peggiore dopo la 1 — è la classe più frequente in assoluto nel dataset (2.250 immagini in train, la più numerosa delle 43). Se il problema fosse "le classi rare soffrono di più per lo sbilanciamento", ci si aspetterebbe il contrario. Questo suggerisce che qui non è (solo) lo sbilanciamento a guidare il collasso, ma la dinamica di ottimizzazione stessa (inizializzazione casuale + la spirale lr/momentum/pos_weight che ho spiegato prima) — che può colpire qualsiasi classificatore, indipendentemente da quanto sia frequente la sua classe.
+La classe 2, seconda peggiore, è anche la classe più frequente del dataset (2.250 immagini in train). Se la causa principale fosse lo sbilanciamento, ci si aspetterebbe il contrario. Questo indica che il collasso non dipende (solo) dallo sbilanciamento, ma dalla dinamica di ottimizzazione stessa — inizializzazione casuale più la spirale lr/momentum/pos_weight descritta sopra — che può colpire qualsiasi classificatore indipendentemente dalla frequenza della sua classe.
 
-Analizzando più approfonditamente e singolarmente la loss di tutte le 43 classi (sempre config instabile lr=0.01, mom=0.99, wd=0.0001, bs=64), notiamo che:
+Loss di validation per ciascuna delle 43 classi (config instabile `lr=0.01, mom=0.99, wd=0.0001, bs=64`):
 
 | Classe | Loss | Shape | Color | Stato |
 | --- | --- | --- | --- | --- |
@@ -246,15 +247,13 @@ Analizzando più approfonditamente e singolarmente la loss di tutte le 43 classi
 | Triangolo rosso (segnali di pericolo: 11,18-31) | 15 classi | 11, 25 | 13.3% |
 | Tutte le altre 15 classi | 15 classi | nessuna | 0% |
 
-7 delle 9 classi esplose (1,2,3,4,5,7,8) appartengono tutte allo stesso, unico gruppo visivo — i segnali circolari rossi (limiti di velocità e divieti), che si assomigliano moltissimo tra loro (stessa forma, stesso colore, differiscono solo nel numero/simbolo al centro). In quel gruppo di 13 classi, più della metà è esplosa; nel resto del dataset (30 classi), il tasso è quasi zero (2/30).
+7 delle 9 classi esplose (1, 2, 3, 4, 5, 7, 8) appartengono allo stesso gruppo visivo — i segnali circolari rossi (limiti di velocità e divieti), molto simili tra loro (stessa forma, stesso colore, differiscono solo nel simbolo centrale). In quel gruppo di 13 classi il tasso di esplosione è del 53.8%; nel resto del dataset (30 classi) è quasi nullo (2/30).
 
-Perché: qui si collega al meccanismo della spirale che avevo spiegato. Classi visivamente molto simili tra loro producono embedding ResNet18 che si sovrappongono di più nello spazio a 512 dimensioni — per il classificatore binario "è la classe i? sì/no", questo vuol dire che il confine tra positivo e negativo è più stretto/ambiguo (più esempi vicini al confine, più facile essere "sicuro e sbagliato" su qualcuno di essi). È esattamente l'innesco della spirale: serve un *errore iniziale con alta confidenza* per partire, e un sotto-problema con confine ambiguo ha semplicemente più occasioni per generarne uno, prima ancora che gli iperparametri aggressivi entrino in gioco.
+La causa è nella rappresentazione: classi visivamente simili producono embedding ResNet18 più sovrapposti nello spazio a 512 dimensioni, quindi un confine di decisione più stretto e ambiguo tra positivo e negativo — più occasioni per un errore iniziale ad alta confidenza, l'innesco necessario per la spirale descritta sopra.
 
-Delle 43 classi che compongono la media della loss OvR nella configurazione instabile, 9 condividono una forte somiglianza visiva, che favorisce un errore iniziale confidente: questo errore viene amplificato dalla spirale descritta sopra (loss non limitata × pos_weight=40 × momentum che accumula), nata dalla combinazione di learning rate e momentum elevati, e porta questo cluster di 9 classi a sabotare l'intera media loss dell'ensemble.
+Emerge così una fragilità strutturale dell'OvR: i 43 classificatori sono completamente indipendenti, ciascuno con la propria traiettoria di ottimizzazione. Se uno di essi imbocca la spirale, nulla nel sistema lo trattiene. Un modello che osserva le classi congiuntamente (Softmax) è invece strutturalmente più robusto a questo tipo di collasso, perché non scompone il problema in decisioni isolate; con iperparametri normali, un errore isolato viene assorbito e il training si riprende regolarmente.
 
-Emerge così una fragilità strutturale dell'ensemble, che si manifesta in modo catastrofico con determinati iperparametri: l'OvR è scomposto in 43 problemi indipendenti, ciascuno con la propria traiettoria di ottimizzazione, il proprio momentum accumulato, il proprio pos_weight=40. Non c'è nulla che "leghi" un classificatore all'altro — se uno dei 43 trova un punto debole (le classi visivamente simili) e imbocca la spirale, non c'è niente nel sistema che lo trattenga: va per conto suo fino in fondo. Quando un problema ha gruppi di classi facilmente confondibili tra loro (come qui), un modello che le guarda congiuntamente (Softmax) *è strutturalmente più robusto all'instabilità di training* rispetto a un ensemble di decisioni indipendenti (OvR). Con iperparametri normali, invece, quell'errore isolato viene assorbito e il training si riprende regolarmente.
-
-Coerentemente con questo, il momentum ottimale risulta diverso tra i due modelli (0.9 per l'OvR, 0.99 per il Softmax): l'ottimo degli iperparametri per l'OvR è tirato verso il basso specificamente dai sotto-problemi fragili (le classi confondibili) nascosti dentro la media.
+Coerentemente, il momentum ottimale differisce tra i due modelli (0.9 per l'OvR, 0.99 per il Softmax): l'ottimo dell'OvR è abbassato specificamente dai sotto-problemi fragili (le classi visivamente confondibili) nascosti dentro la media.
 
 3. **La val_acc dell'OvR non è una metrica affidabile per il model selection.** Anche nelle configurazioni peggiori (dove la val_loss esplode a 2.36), la val_acc media dell'OvR resta comunque alta (96-98%). Questo è dovuto allo sbilanciamento intrinseco di ogni sotto-problema binario: un classificatore che predice quasi sempre "negativo" ottiene comunque un'accuracy elevata semplicemente perché i negativi sono la stragrande maggioranza (accuracy paradox) (vedi [Valverde-Albacete & Peláez-Moreno, 2014](#riferimenti)). Per questo motivo, per confrontare le configurazioni dell'OvR è stata usata la val_loss piuttosto che la val_acc.
 
@@ -276,7 +275,7 @@ Le due configurazioni ottimali (scelte esclusivamente su validation, sezione pre
 <img src="../media/softmax_confusion_matrix.png" alt="Confusion Matrix Softmax" width="650">
 <img src="../media/ovr_confusion_matrix.png" alt="Confusion Matrix OvR" width="650">
 
-Guardando le matrici di confusione: Notiamo come le caselle "fuori dalla diagonale" si addensano vicino alle classi 0-8 (i limiti di velocità/segnali circolari, che si assomigliano visivamente) — e da lì siamo partiti per quantificare la cosa con numeri precisi (accuracy per cluster, % di errori "in famiglia"), invece di fermarci all'impressione visiva.
+Guardando le matrici di confusione: Notiamo come le caselle "fuori dalla diagonale" si addensano vicino alle classi 0-8 (i limiti di velocità/segnali circolari, che si assomigliano visivamente).
 
 
 ### MLP
@@ -289,7 +288,7 @@ Allenato un `MLPClassifier` (`Linear(512→hidden) → ReLU → Dropout → Line
 
 **Test set**: **Test Accuracy = 88.12%** (contro 96.77% di val_acc, gap **-8.65pt**). È il **miglior risultato su test di tutto il progetto**, leggermente sopra SVM Lineare (87.47%) e Softmax (86.63%) — coerente con l'aspettativa che, essendo l'unico modello non lineare, l'MLP possa catturare pattern che i modelli lineari non colgono, pur restando comunque un modello semplice (un solo hidden layer) e quindi meno esposto all'overfitting rispetto a un albero senza vincoli o a un kernel RBF molto flessibile.
 
-**Conferma dell'ipotesi sul gap val→test**: la config vincente dell'MLP non usa alcuna pesatura per lo sbilanciamento (`CrossEntropyLoss` senza `weight`), e il suo gap (*-8.65pt tra Val Accuracy e Test Accuracy*) cade esattamente nel gruppo "piccolo" insieme a Softmax (-8.64pt), SVM Lineare (-8.65pt, coincidenza numerica quasi esatta) e AdaBoost (-6.98pt) — non nel gruppo "grande" (13-15pt) di OvR/SVM RBF/Random Forest. L'ipotesi (vedi Riepilogo a fine sezione Esperimenti) regge quindi su **tutti e otto** i modelli, non più solo sui sette misurati in precedenza.
+**Gap val→test dell'MLP**: la config vincente dell'MLP non usa alcuna pesatura per lo sbilanciamento (`CrossEntropyLoss` senza `weight`); il suo gap è **-8.65pt**, vicino a quello del Softmax (-8.64pt, anch'esso senza pesatura). Il confronto con gli altri sei modelli — inclusi quelli con pesatura, necessario per valutare l'ipotesi che la pesatura allarghi il gap — è nella sezione **Riepilogo** a fine capitolo Esperimenti, una volta presentati tutti i modelli.
 
 <img src="../media/mlp_hidden_size_effect.png" alt="Effetto hidden_size" width="650">
 <img src="../media/mlp_dropout_effect.png" alt="Effetto dropout" width="650">
@@ -428,7 +427,7 @@ Totale: 16 configurazioni (contro le 48 del Decision Tree), stessa disciplina tr
 <img src="../media/rf_acc_vs_frequency.png" alt="Accuracy per classe vs frequenza" width="650">
 <img src="../media/dt_vs_rf_comparison.png" alt="Decision Tree vs Random Forest" width="650">
 
-**Test set**: **Test Accuracy = 77.17%** (contro 92.29% di val_acc, gap **-15.12pt** — il più grande tra tutti e otto i modelli del progetto). Appuntiamo l'uso di `class_weight='balanced` e quindi gap più grande, succede anche in altri modelli.
+**Test set**: **Test Accuracy = 77.17%** (contro 92.29% di val_acc, gap **-15.12pt** — il più grande tra tutti e otto i modelli del progetto).
 
 ### SVM lineare e RBF
 
@@ -524,13 +523,13 @@ Per verificare l'ipotesi avanzata sopra — il calo val→test più marcato dell
 <img src="../media/softmax_acc_vs_frequency.png" alt="Accuracy per classe vs frequenza - Softmax" width="650">
 <img src="../media/ovr_acc_vs_frequency.png" alt="Accuracy per classe vs frequenza - OvR" width="650">
 
-La divergenza tra Softmax e OvR è concentrata proprio nella coda delle classi rare. Lo script (`src/plot_softmax_ovr.py`) stampa anche il coefficiente di correlazione tra frequenza in train e accuracy di test per classe, per ciascuno dei due modelli: il valore osservato è 0.538 per entrambi.
+Guardando l'accuracy per classe, l'OvR risulta leggermente peggiore del Softmax nella maggioranza delle classi (28 su 43, 65%) — un piccolo svantaggio diffuso, non isolato in un sottogruppo specifico. Lo script (`src/plot_softmax_ovr.py`) stampa anche il coefficiente di correlazione tra frequenza in train e accuracy di test per classe, per ciascuno dei due modelli: il valore osservato è identico, **0.538**, per entrambi — nonostante Softmax (che valuta tutte le 43 classi congiuntamente) e OvR (43 modelli binari indipendenti, con `pos_weight=40`) abbiano architetture e funzioni di loss diverse. A livello macroscopico, quindi, entrambi i modelli sono limitati dalla stessa carenza di dati: la relazione tra quantità di esempi in train e accuracy di test, mediata su tutte le 43 classi, è la stessa per i due approcci.
 
-Questi due risultati vanno letti insieme. La correlazione identica indica che, in generale, i due modelli non differiscono per sensibilità alla frequenza delle classi — l'ipotesi di una sensibilità diffusa dell'OvR non regge. La coda che diverge, però, mostra che localmente, proprio dove il `pos_weight=40` dell'OvR dovrebbe intervenire di più (le classi più sotto-rappresentate), l'effetto si vede comunque.
+Questi due risultati vanno letti insieme. La correlazione identica conferma che, in generale, i due modelli non differiscono per sensibilità alla frequenza delle classi. Lo svantaggio dell'OvR, però, non è uniforme: sulle 10 classi più rare del dataset il calo medio dell'OvR rispetto al Softmax è di **-4.33pt**, più del doppio di quello osservato sul resto delle classi (**-1.2pt** in media). L'OvR resta quindi mediamente un po' peggiore ovunque, ma proprio dove il `pos_weight=40` dovrebbe intervenire di più — le classi più sotto-rappresentate — lo svantaggio si amplifica sensibilmente.
 
 Nello specifico, 0.538 descrive una relazione positiva moderata: c'è una tendenza reale (le classi con più esempi tendono ad avere accuracy di test più alta), ma lontana dal perfetto. Elevando al quadrato (0.538² ≈ 0.29) si ottiene una stima approssimativa di quanta varianza dell'accuracy tra classi sia spiegata dalla sola frequenza in train: circa il 29%, una minoranza. Il restante ~71% dipende da altri fattori — somiglianza visiva tra classi, difficoltà intrinseca del segnale, qualità delle immagini — non dalla quantità di dati. In pratica, questo significa che esistono classi con pochi esempi in train ma alta accuracy in test, perché il segnale è visivamente distintivo (basta poco per impararlo bene), e classi con molti esempi in train ma bassa accuracy in test, perché visivamente simili ad altre (es. due limiti di velocità che si assomigliano), tanto che anche con molti dati il modello continua a confonderle.
 
-In conclusione, il gap val→test più grande dell'OvR non è spiegato da una maggiore sensibilità generale alla scarsità di dati (la correlazione frequenza↔accuracy è identica a quella del Softmax). È invece plausibilmente causato da un piccolo sottoinsieme specifico di classi rare/confondibili su cui il `pos_weight=40` dell'OvR overfitta agli esempi visti in train/val, e che poi crolla in modo sproporzionato sul test.
+In conclusione, il gap val→test più grande dell'OvR non è spiegato da una maggiore sensibilità generale alla scarsità di dati (la correlazione frequenza↔accuracy è identica a quella del Softmax). È invece plausibilmente legato all'amplificazione, nelle classi più rare, dello stesso lieve svantaggio che l'OvR mostra in modo diffuso su gran parte delle classi: il `pos_weight=40` porta il modello a overfittare più fortemente sugli esempi rari specifici visti in train/val, un adattamento che si trasferisce peggio sul test.
 
 ### Riepilogo: confronto di tutti gli otto modelli
 
@@ -549,7 +548,7 @@ In conclusione, il gap val→test più grande dell'OvR non è spiegato da una ma
 
 **Osservazione 1 — il migliore su validation non è il migliore su test.** Su validation, OvR e SVM RBF dominavano (~98.5-98.7%), ben sopra Softmax, SVM Lineare e MLP (~95-97%). Sul test la classifica si ribalta quasi del tutto: **l'MLP vince (88.12%)**, seguito da SVM Lineare e Softmax, con OvR e SVM RBF che scivolano in fondo allo stesso gruppo.
 
-**Osservazione 2 (confermata su tutti e otto i modelli) — il gap val→test è sistematicamente più grande quando la config vincente pesa per lo sbilanciamento.** Ordinando gli otto modelli per gap:
+**Osservazione 2 — il gap val→test è più grande, in media, quando la pesatura contribuisce davvero al risultato della config vincente.** Ordinando gli otto modelli per gap:
 
 | Gap | Modello | Class weight vincente |
 |---|---|---|
@@ -557,16 +556,16 @@ In conclusione, il gap val→test più grande dell'OvR non è spiegato da una ma
 | -8.64pt | Softmax | nessuno |
 | -8.65pt | SVM Lineare | None |
 | -8.65pt | MLP | nessuno |
-| -13.05pt | Decision Tree | None *(eccezione, vedi sotto)* |
+| -13.05pt | Decision Tree | None *(eccezione, causa diversa — vedi sotto)* |
 | -13.28pt | OvR | pos_weight=40 |
-| -13.66pt | SVM RBF | balanced |
+| -13.66pt | SVM RBF | balanced *(effetto trascurabile, causa diversa — vedi sotto)* |
 | **-15.12pt** | **Random Forest** | **balanced** |
 
-I quattro modelli col gap più piccolo (≤8.65pt) hanno **tutti** vinto senza alcuna pesatura per classi rare — l'MLP, allenato e valutato per ultimo apposta come verifica indipendente dell'ipotesi, conferma il pattern con un gap (-8.65pt) praticamente identico a quello di SVM Lineare. Dei quattro modelli col gap più grande (≥13pt), **tre su quattro** (OvR, SVM RBF, Random Forest) hanno vinto la selezione usando una qualche pesatura (`pos_weight=40` fisso per OvR, `class_weight='balanced'` per RBF e Random Forest) — ed è proprio il Random Forest, il più pesato di tutti, ad avere il gap più grande in assoluto. Il Decision Tree è l'unica eccezione al pattern, ma ha una spiegazione alternativa già nota e diversa (albero singolo senza vincoli di profondità, overfitting classico, non legato allo sbilanciamento).
+I quattro modelli col gap più piccolo (≤8.65pt) hanno **tutti** vinto senza alcuna pesatura per classi rare — l'MLP conferma il pattern con un gap (-8.65pt) praticamente identico a quello di SVM Lineare. Dei quattro modelli col gap più grande (≥13pt), però, solo **due** (OvR e Random Forest) hanno un gap attribuibile alla pesatura con un meccanismo verificato: nell'OvR l'analisi per-classe mostra l'amplificazione dello svantaggio sulle classi rare (sezione precedente); nel Random Forest la pesatura migliora la validation (+3.4pt) inducendo un adattamento più specifico ai pochi esempi rari visti in train/val. Gli altri due hanno un gap altrettanto grande ma con **causa diversa, non la pesatura**: il Decision Tree vince *senza* pesatura (overfitting classico da varianza, un albero senza vincoli di profondità); la SVM RBF vince nominalmente con `class_weight='balanced'`, ma nella sua sezione dedicata lo stesso accorgimento si è già rivelato avere un effetto trascurabile (0.1-0.5pt) — il suo gap è spiegato dal kernel troppo flessibile su 512 dimensioni (overfitting topologico), non dallo sbilanciamento. Il pattern "pesatura → gap più grande" regge quindi solo per metà dei modelli col gap grande, non per tutti e quattro.
 
 <img src="../media/class_weight_across_models.png" alt="Effetto class_weight su tutti i modelli" width="650">
 
-**Ipotesi esplicativa**: pesare per le classi rare fa sì che il modello si adatti più strettamente agli esempi rari *specifici* presenti in train/val; se il test proviene da condizioni/sequenze diverse, quell'adattamento molto specifico si trasferisce peggio — amplificando il calo. È una spiegazione plausibile, coerente con tutti gli otto modelli raccolti.
+**Ipotesi esplicativa**: pesare per le classi rare fa sì che il modello si adatti più strettamente agli esempi rari *specifici* presenti in train/val; se il test proviene da condizioni/sequenze diverse, quell'adattamento molto specifico si trasferisce peggio — amplificando il calo. È una spiegazione plausibile e verificata per OvR e Random Forest; per Decision Tree e SVM RBF il gap altrettanto grande ha un'origine diversa (varianza classica e overfitting topologico, rispettivamente — si veda "Sintesi dei risultati ottenuti" in Conclusioni).
 
 ## Demo
 
@@ -610,14 +609,7 @@ Video dimostrativo dell'utilizzo della demo (selezione modello, caricamento imma
 
 ## Codice
 
-**Nota sui pesi dei modelli**: i file dei pesi (`.pth`/`.joblib`) non sono inclusi nel repository git per tenerlo leggero — sono disponibili già pronti, senza bisogno di alcun training, come archivio unico nella release del repository:
-
-**[\[link diretto\]](https://github.com/giuseppe-aiello/unict-ml-year-25-group-AIELLO/releases/download/v1.0-results/pesi_modelli.zip)**
-
-Per usarli:
-1. Scaricare `pesi_modelli.zip` dal link sopra.
-2. Estrarlo nella cartella `results/` del repository (l'archivio va estratto *dentro* `results/`, non nella root del progetto). Al termine, `results/` dovrebbe contenere le sottocartelle `features/` (embedding ResNet18 precalcolati), `models/` (pesi Softmax/OvR/MLP), `models_classical/` (pesi Decision Tree/Random Forest/SVM/AdaBoost) e `models_mlp/` (riepilogo della grid search MLP).
-3. A questo punto sia la demo (`python src/demo.py`) sia gli script `evaluate_*.py`/`plot_*.py` funzionano immediatamente, senza rieseguire alcun training.
+**Nota sui pesi dei modelli**: come già indicato in Demo, i file dei pesi (`.pth`/`.joblib`) non sono inclusi nel repository git per tenerlo leggero — sono disponibili già pronti nell'archivio unico della release ([link diretto](https://github.com/giuseppe-aiello/unict-ml-year-25-group-AIELLO/releases/download/v1.0-results/pesi_modelli.zip)), da estrarre dentro `results/`.
 
 ### Struttura del repository
 
@@ -647,12 +639,7 @@ Tutto il codice sorgente è in `src/`, organizzato per responsabilità:
 **Demo:**
 - `demo.py` — interfaccia grafica Tkinter per testare gli 8 modelli interattivamente (descritta nella sezione Demo).
 
-**Nota sulla cartella `results/`**: l'intero contenuto di `results/` (feature ResNet18 precalcolate, pesi di tutte le configurazioni di grid search, modelli finali dei 4 classici, tutti i `grid_search_results.json`) non è incluso nel repository git per tenerlo leggero — è disponibile già pronto, senza bisogno di alcun training, come archivio unico nella release del repository: https://github.com/giuseppe-aiello/unict-ml-year-25-group-AIELLO/releases/download/v1.0-results/pesi_modelli.zip
-
-Per usarlo:
-1. Scaricare `pesi_modelli.zip` dal link sopra.
-2. Estrarne il contenuto **dentro** la cartella `results/` del repository (l'archivio contiene già le sottocartelle `features/`, `models/`, `models_classical/`, `models_mlp/` con la struttura corretta).
-3. A questo punto sia la demo (`python src/demo.py`) sia gli script `evaluate_*.py`/`plot_*.py` funzionano immediatamente, senza rieseguire alcun training.
+**Nota sulla cartella `results/`**: l'intero contenuto (feature ResNet18 precalcolate, pesi di tutte le configurazioni di grid search, modelli finali dei 4 classici, tutti i `grid_search_results.json`) non è incluso nel repository git per tenerlo leggero — è lo stesso archivio già indicato in Demo e a inizio Codice, da estrarre dentro `results/`.
 
 ### Come farlo funzionare
 
@@ -696,13 +683,13 @@ Ho confrontato otto strategie di classificazione — due modelli lineari (Softma
 
 **La scoperta principale** è che il gap val→test non ha un'unica causa comune, ma si spiega con almeno **tre meccanismi distinti** a seconda del modello:
 
-1. **Overfitting da pesatura dello sbilanciamento** (OvR `pos_weight=40`, Random Forest `class_weight='balanced'`, gap -13.28pt e -15.12pt): pesare fortemente gli esempi delle classi rare fa sì che il modello si adatti in modo molto specifico ai pochi esempi rari visti in train/val. Dato che GTSRB è costruito da tracce video (frame consecutivi dello stesso cartello, sezione Dataset), gli esempi di test delle stesse classi rare provengono da tracce/condizioni diverse — quell'adattamento iper-specifico non si trasferisce, il modello "conosce" quegli esempi particolari, non il concetto generale della classe. I quattro modelli con gap piccolo (≤8.65pt: AdaBoost, Softmax, SVM Lineare, MLP) hanno tutti vinto **senza** alcuna pesatura, incluso l'MLP allenato e valutato apposta come verifica indipendente del pattern.
+1. **Overfitting da pesatura dello sbilanciamento** (OvR `pos_weight=40`, Random Forest `class_weight='balanced'`, gap -13.28pt e -15.12pt): pesare fortemente gli esempi delle classi rare fa sì che il modello si adatti in modo molto specifico ai pochi esempi rari visti in train/val. Dato che GTSRB è costruito da tracce video (frame consecutivi dello stesso cartello, sezione Dataset), gli esempi di test delle stesse classi rare provengono da tracce/condizioni diverse — quell'adattamento iper-specifico non si trasferisce, il modello "conosce" quegli esempi particolari, non il concetto generale della classe. I quattro modelli con gap piccolo (≤8.65pt: AdaBoost, Softmax, SVM Lineare, MLP) hanno tutti vinto **senza** alcuna pesatura.
 2. **Overfitting topologico da alta dimensionalità** (SVM RBF, gap -13.66pt): qui `class_weight` ha un effetto trascurabile (0.1-0.5pt), quindi lo sbilanciamento non è la causa. Il kernel RBF, combinato con 512 dimensioni di input, costruisce confini decisionali molto flessibili e chiusi attorno ai dati di validation (98.51% di val_acc) — un adattamento topologico troppo aderente che non regge sul test.
 3. **Overfitting classico da varianza** (Decision Tree, gap -13.05pt, `class_weight=None`): un albero singolo senza vincoli di profondità (`max_depth=20`) si adatta a dettagli specifici del validation set, indipendentemente dallo sbilanciamento — l'unica eccezione al pattern 1, ma con una spiegazione nota e diversa.
 
-Un'indagine successiva di verifica (correlazione tra frequenza in train e accuracy di test per classe, Softmax vs OvR) ha **raffinato** l'ipotesi 1 invece di confermarla in toto: il coefficiente di correlazione globale è identico nei due modelli (0.538) — quindi OvR non è genericamente più sensibile alla scarsità di dati su tutte le 43 classi — ma la divergenza tra i due modelli è **concentrata nella coda delle classi più rare**, proprio dove `pos_weight=40` interviene con più forza. Questo è coerente con un'altra scoperta indipendente del progetto: una config di iperparametri aggressiva (lr=0.01, mom=0.99) manda in "spirale" 9 dei 43 classificatori binari OvR (su classi visivamente confondibili), mentre gli altri 34 restano sani — una fragilità strutturale della scomposizione one-vs-rest (43 ottimizzazioni indipendenti, nessun meccanismo che leghi un classificatore all'altro), legata anche alla dinamica di early stopping: passi grandi (lr/momentum aggressivi) esauriscono in fretta il margine di miglioramento per tutti e 43 i classificatori, buoni o esplosi che siano — quindi non è che l'instabilità che causa uno stop precoce, è la stessa proprietà (passi ampi e poco raffinati) a produrre entrambi gli effetti: da un lato spinge alcuni classificatori fuori da qualsiasi zona buona (dove la loss è bassa) (l'esplosione), dall'altro fa sì che ogni salto grande esaurisca in fretta il margine di miglioramento residuo per tutti (quindi l'early stopping scatta presto per tutti, buoni o esplosi).
+Un'indagine successiva di verifica (correlazione tra frequenza in train e accuracy di test per classe, Softmax vs OvR) ha **raffinato** l'ipotesi 1 invece di confermarla in toto: il coefficiente di correlazione globale è identico nei due modelli (0.538) — quindi OvR non è genericamente più sensibile alla scarsità di dati su tutte le 43 classi. Guardando l'accuracy per singola classe, l'OvR è comunque leggermente peggiore del Softmax nella maggioranza delle classi (28 su 43, 65%) — un piccolo svantaggio diffuso, non isolato in un sottogruppo — ma questo divario si **amplifica** sulle classi più rare: -4.33pt medi sulle 10 classi meno rappresentate, contro -1.2pt medi sul resto, proprio dove `pos_weight=40` interviene con più forza. Questo è coerente, a un livello più generale, con un'altra scoperta indipendente del progetto — ma su un regime di iperparametri diverso, non quello della config vincente: sotto una combinazione molto più aggressiva (lr=0.01, mom=0.99, contro lr=0.001, mom=0.9 della config effettivamente valutata sul test), 9 dei 43 classificatori binari OvR (su classi visivamente confondibili) collassano in una "spirale" di instabilità durante il training, mentre gli altri 34 restano sani. Non è lo stesso fenomeno del gap val→test appena discusso: qui il problema è instabilità di training in una config mai scelta come vincitrice, non generalizzazione nella config vincente. Il filo comune è però lo stesso, a un livello più astratto: l'OvR è scomposto in 43 ottimizzazioni indipendenti, senza alcun meccanismo che le leghi tra loro, quindi un sottoinsieme di classi problematiche (qui quelle visivamente confondibili) può danneggiare l'intero gruppo senza che gli altri classificatori se ne accorgano — che il danno si manifesti come instabilità di training (regime aggressivo) o come overfitting di generalizzazione (regime vincente).
 
-Osservazioni di contorno rilevanti: il weight decay ha un impatto marginale su Softmax/OvR nell'intervallo testato, segno che l'overfitting "classico" (pesi troppo grandi) non era il problema dominante per modelli lineari su 512 feature e un dataset ampio — coerente con il gap fisiologico piccolo osservato nei modelli non pesati. Il Random Forest trae beneficio da `class_weight='balanced'` (+3.4pt) mentre lo stesso accorgimento **danneggia** il Decision Tree singolo (fino a -20pt): il bagging (bootstrap + feature sampling casuale) scorrela la distorsione che la pesatura introduce nei singoli split tra i 300 alberi, e la media la spegne mantenendo il beneficio (più attenzione alle classi rare) — lo stesso principio di riduzione della varianza per cui il Random Forest batte in generale un albero singolo, applicato a questo caso specifico.
+Osservazioni di contorno rilevanti: il weight decay ha un impatto marginale su Softmax/OvR nell'intervallo testato, segno che l'overfitting "classico" (pesi troppo grandi) non era il problema dominante per modelli lineari su 512 feature e un dataset ampio. Il Random Forest trae beneficio da `class_weight='balanced'` (+3.4pt) mentre lo stesso accorgimento **danneggia** il Decision Tree singolo (fino a -20pt): il bagging (bootstrap + feature sampling casuale) scorrela la distorsione che la pesatura introduce nei singoli split tra i 300 alberi, e la media la spegne mantenendo il beneficio (più attenzione alle classi rare) — lo stesso principio di riduzione della varianza per cui il Random Forest batte in generale un albero singolo, applicato a questo caso specifico.
 
 ### Impatto e contributo del progetto
 
@@ -710,7 +697,7 @@ Ho realizzato un **confronto controllato** di otto famiglie di classificatori (l
 
 Il progetto fornisce una **dimostrazione empirica concreta dell'accuracy paradox** (il modello migliore su validation non è il migliore su test), motivo diretto per cui la disciplina train/val/test va rispettata rigorosamente.
 
-Il risultato più originale è l'aver **decomposto una correlazione apparentemente unica** (pesatura → gap più grande) in **meccanismi causali distinti per famiglia di modello**: overfitting agli esempi specifici per OvR/Random Forest, overfitting topologico da alta dimensionalità per SVM RBF, overfitting da varianza per Decision Tree. Questo insieme alla spiegazione del perché la stessa tecnica (`class_weight`) aiuti il Random Forest e danneggi il Decision Tree (argomento basato sulla teoria del bagging, non solo empirico).
+Il risultato più originale è l'aver **decomposto una correlazione apparentemente unica** (pesatura → gap più grande) in **meccanismi causali distinti per famiglia di modello**: overfitting agli esempi specifici per OvR/Random Forest, overfitting topologico da alta dimensionalità per SVM RBF, overfitting da varianza per Decision Tree.
 
 ### Idee per lavori futuri o estensioni
 
