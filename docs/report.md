@@ -740,5 +740,5 @@ Ciò sarebbe decisivo nel separare "overfitting da class-weighting" da "rumore d
 ## Riferimenti
 
 - Stallkamp, J., Schlipsing, M., Salmen, J., & Igel, C. (2012). *Man vs. computer: Benchmarking machine learning algorithms for traffic sign recognition.* Neural Networks, 32, 323–332. https://doi.org/10.1016/j.neunet.2012.02.016
-- Elkan, C. (2001). *The Foundations of Cost-Sensitive Learning.* Proceedings of the 17th International Joint Conference on Artificial Intelligence (IJCAI), 973–978. https://cseweb.ucsd.edu/~elkan/rescale.pdf
+- Elkan, C. (2001). *The Foundations of Cost-Sensitive Learning.* Proceedings of the 17th International Joint Conference on Artificial Intelligence (IJCAI), 973–978. https://cseweb.ucsd.edu/~elkan/rescale.pdf *(il link è alla copia preprint auto-archiviata dall'autore, che riporta "To appear, Proceedings of IJCAI'01" e non l'impaginazione degli atti ufficiali; i numeri di pagina 973–978 sono quelli della pubblicazione IJCAI ufficiale, non visibili nel PDF linkato)*
 - Valverde-Albacete, F. J., & Peláez-Moreno, C. (2014). *100% Classification Accuracy Considered Harmful: The Normalized Information Transfer Factor Explains the Accuracy Paradox.* PLOS ONE, 9(1), e84217. https://doi.org/10.1371/journal.pone.0084217
