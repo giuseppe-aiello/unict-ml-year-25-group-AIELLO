@@ -148,6 +148,8 @@ Per ciascuna delle 16 configurazioni sono state registrate le curve di train/val
 
 *(tabella completa con tutte le 16 righe disponibile in appendice / `results/models/grid_search_results.json`)*
 
+*(val_loss e val_acc riportati sono quelli del checkpoint migliore di ciascun training — l'epoca con la val_loss più bassa, non l'ultima eseguita — letti nello stesso istante per entrambe le metriche. Questo perchè: in `training.py` i pesi vengono salvati su disco solo quando la val_loss migliora, quindi quel checkpoint è l'**unico modello effettivamente salvato** per ogni training — le altre epoche (comprese eventuali epoche con accuracy più alta ma loss peggiore) non corrispondono a nessun modello realmente disponibile, i loro pesi sono stati sovrascritti. La colonna "epoche" indica invece quante epoche sono state effettivamente eseguite prima dell'early stopping, un numero diverso dall'epoca del checkpoint migliore/salvato. Stessa convenzione "best" usata ovunque nel report per confrontare le configurazioni.)*
+
 *(OvR usa la media di 43 BCEWithLogitsLoss con pos_weight=40, è una semplificazione e una scelta di sperimentazione)*
 
 **Osservazioni principali:**
@@ -338,7 +340,7 @@ Quindi il modello non generalizza "meglio" nella validation rispetto che nel tra
 
 <img src="../media/ovr_instabilita.png" alt="Instabilità OvR" width="650">
 
-- Nella config instabile, la curva collassa e si **appiattisce perfettamente dall'epoca ~21** in poi (val_loss fissa a 2.544, verificato sui dati grezzi) — segno che tutti e 43 i classificatori hanno smesso di allenarsi presto (early stopping scattato per l'intero gruppo entro le prime ~20 epoche), su un risultato pessimo. Nella config stabile, invece, non si osserva mai una stabilizzazione così netta: la curva continua a muoversi leggermente fino all'epoca 50, segno che i 43 classificatori si fermano in momenti diversi e sparsi lungo quasi tutto il training, non tutti insieme e in anticipo.
+- Nella config instabile, la curva collassa e si **appiattisce perfettamente dall'epoca ~21** in poi (val_loss fissa a 2.544, verificato sui dati grezzi) — segno che tutti e 43 i classificatori hanno smesso di allenarsi presto (early stopping scattato per l'intero gruppo entro le prime ~20 epoche). Non tutti però per lo stesso motivo: i 9 classificatori esplosi si fermano perché bloccati nella spirale, senza più possibilità di migliorare; gli altri 34 (in gran parte "sani", con loss vicina allo zero) si fermano altrettanto presto perché il passo `lr=0.01` così aggressivo li fa convergere a un buon minimo in pochissime epoche, esaurendo rapidamente il margine di miglioramento residuo — non su un risultato pessimo, ma su uno già buono e senza più spazio per crescere. Nella config stabile, invece, non si osserva mai una stabilizzazione così netta: la curva continua a muoversi leggermente fino all'epoca 50, segno che i 43 classificatori si fermano in momenti diversi e sparsi lungo quasi tutto il training, non tutti insieme e in anticipo.
 
 ### Decision Tree
 
